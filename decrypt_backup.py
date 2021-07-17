@@ -22,6 +22,8 @@ from pathlib import Path
 
 from argparse import ArgumentParser, FileType
 
+from cryptography.hazmat.backends import default_backend
+
 from cryptography.hazmat.primitives.hashes import Hash, SHA256, SHA512
 
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
@@ -33,6 +35,9 @@ from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.modes import CTR
 
 from Backups_pb2 import BackupFrame, SqlStatement  # type: ignore
+
+
+DefaultBackend = default_backend()
 
 
 class HeaderData(NamedTuple):
@@ -65,15 +70,15 @@ def derive_keys(passphrase: str, salt: bytes) -> Keys:
     passphrase_bytes = passphrase.replace(" ", "").encode("ascii")
 
     hash = passphrase_bytes
-    sha512 = Hash(algorithm=SHA512())
+    sha512 = Hash(algorithm=SHA512(), backend=DefaultBackend)
     sha512.update(salt)
     for _ in range(250000):
         sha512.update(hash)
         sha512.update(passphrase_bytes)
         hash = sha512.finalize()
-        sha512 = Hash(algorithm=SHA512())
+        sha512 = Hash(algorithm=SHA512(), backend=DefaultBackend)
 
-    hkdf = HKDF(algorithm=SHA256(), length=64, info=b"Backup Export", salt=b"")
+    hkdf = HKDF(algorithm=SHA256(), length=64, info=b"Backup Export", salt=b"", backend=DefaultBackend)
     keys = hkdf.derive(hash[:32])
     return Keys(
         cipher_key=keys[:32],
@@ -107,13 +112,17 @@ def decrypt_frame(
     ciphertext = backup_file.read(length - 10)
     their_mac = backup_file.read(10)
 
-    hmac = HMAC(hmac_key, SHA256())
+    hmac = HMAC(hmac_key, SHA256(), backend=DefaultBackend)
     hmac.update(ciphertext)
     our_mac = hmac.finalize()
     if their_mac != our_mac[: len(their_mac)]:
         raise MACMismatchError()
 
-    cipher = Cipher(algorithm=AES(cipher_key), mode=CTR(initialisation_vector))
+    cipher = Cipher(
+        algorithm=AES(cipher_key),
+        mode=CTR(initialisation_vector),
+        backend=DefaultBackend,
+    )
     decryptor = cipher.decryptor()
     frame_bytes = decryptor.update(ciphertext) + decryptor.finalize()
 
@@ -131,10 +140,14 @@ def decrypt_frame_payload(
     """
     Decrypt an encrypted binary payload from the backup file in ``chunk_size`` chunks.
     """
-    hmac = HMAC(hmac_key, SHA256())
+    hmac = HMAC(hmac_key, SHA256(), backend=DefaultBackend)
     hmac.update(initialisation_vector)
 
-    cipher = Cipher(algorithm=AES(cipher_key), mode=CTR(initialisation_vector))
+    cipher = Cipher(
+        algorithm=AES(cipher_key),
+        mode=CTR(initialisation_vector),
+        backend=DefaultBackend,
+    )
     decryptor = cipher.decryptor()
 
     # Read the data, incrementally decrypting one chunk at a time
