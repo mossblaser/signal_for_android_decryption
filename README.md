@@ -60,9 +60,10 @@ files are organised as follows:
   implementation defined and it is up to you to work out how to extract the
   information you want.
 * `preferences.json`: A JSON file containing the 'preference' data encoded by
-  the backup. At the time of writing, this only consists of a single
-  public/private key pair.  Application preferences are stored in the SQLite
-  database.
+  the backup. Despite the existance of this file, most application preferences
+  are stored in the SQLite database.
+* `key_value.json`: A JSON file containing the 'key-value' data encoded by
+  the backup.
 * `attachments/*.bin`: Binary files attached to messages sent or received (e.g.
   photos and videos). These are named based on their `unique_id` as used in the
   database. To infer the correct file extension you'll need to lookup the MIME

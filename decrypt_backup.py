@@ -20,6 +20,8 @@ import getpass
 
 from pathlib import Path
 
+from base64 import b64encode
+
 from argparse import ArgumentParser, FileType
 
 from cryptography.hazmat.backends import default_backend
@@ -201,15 +203,16 @@ def decrypt_backup(
     Will create the output directory if it does not exist and may overwrite
     any existing files.
 
-    Creates ``database.sqlite``, ``preferences.json`` and three directories
-    ``attachments``, ``stickers`` and ``avatars``. In each of the three
-    directories, decrypted files named ``<id>.bin`` will be created.
+    Creates ``database.sqlite``, ``preferences.json``, ``key_value.json`` and
+    three directories ``attachments``, ``stickers`` and ``avatars``. In each of
+    the three directories, decrypted files named ``<id>.bin`` will be created.
 
     Implemented as a generator which yields frequently to allow the display of
     a progress bar (e.g. by using ``backup_file.tell()``.
     """
     database_filename = output_directory / "database.sqlite"
     preferences_filename = output_directory / "preferences.json"
+    key_value_filename = output_directory / "key_value.json"
     attachments_directory = output_directory / "attachments"
     stickers_directory = output_directory / "stickers"
     avatars_directory = output_directory / "avatars"
@@ -230,8 +233,11 @@ def decrypt_backup(
     db_connection = sqlite3.connect(database_filename)
     db_cursor = db_connection.cursor()
 
-    # Preferences stored as a dictionary {<file>: {<key>: <value>, ...}, ...}
-    preferences: Dict[str, Dict[str, str]] = {}
+    # Preferences stored as a dictionary {<file>: {<key>: {<type>: <value>, ...}, ...}, ...}
+    preferences: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    
+    # Key-Value pairs stored as a dictionary {<key>: {<type>: <value>, ...}, ...}
+    key_values: Dict[str, Dict[str, Any]] = {}
 
     # Work out basic cryptographic parameters
     initialisation_vector, salt = read_backup_header(backup_file)
@@ -265,9 +271,29 @@ def decrypt_backup(
                 )
         elif backup_frame.HasField("preference"):
             preference = backup_frame.preference
-            preferences.setdefault(preference.file, {})[
+            value_dict = preferences.setdefault(preference.file, {})[
                 preference.key
-            ] = preference.value
+            ] = {}
+            if preference.HasField("value"):
+                value_dict["value"] = preference.value
+            if preference.HasField("booleanValue"):
+                value_dict["booleanValue"] = preference.booleanValue
+            if preference.HasField("isStringSetValue") and preference.isStringSetValue:
+                value_dict["stringSetValue"] = list(preference.stringSetValue)
+        elif backup_frame.HasField("keyValue"):
+            key_value = backup_frame.keyValue
+            value_dict = key_values[key_value.key] = {}
+            for field in [
+                "booleanValue",
+                "floatValue",
+                "integerValue",
+                "longValue",
+                "stringValue",
+            ]:
+                if key_value.HasField(field):
+                    value_dict[field] = getattr(key_value, field)
+            if key_value.HasField("blobValue"):
+                value_dict["blobValueBase64"] = b64encode(key_value.blobValue).decode("ascii")
         else:
             if backup_frame.HasField("attachment"):
                 filename = (
@@ -304,6 +330,9 @@ def decrypt_backup(
 
     with preferences_filename.open("w") as pf:
         json.dump(preferences, pf)
+
+    with key_value_filename.open("w") as kvf:
+        json.dump(key_values, kvf)
 
 
 def main() -> None:
