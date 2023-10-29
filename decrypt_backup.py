@@ -45,6 +45,7 @@ DefaultBackend = default_backend()
 class HeaderData(NamedTuple):
     initialisation_vector: bytes  # 16 bytes
     salt: bytes
+    version: int | None = None
 
 
 def read_backup_header(backup_file: BinaryIO) -> HeaderData:
@@ -56,9 +57,14 @@ def read_backup_header(backup_file: BinaryIO) -> HeaderData:
     assert backup_frame.header.HasField("iv")
     assert backup_frame.header.HasField("salt")
 
+    header_version = None
+    if backup_frame.header.HasField("version"):
+        header_version = backup_frame.header.version
+    
     return HeaderData(
         initialisation_vector=backup_frame.header.iv,
         salt=backup_frame.header.salt,
+        version=header_version
     )
 
 
@@ -107,25 +113,35 @@ def decrypt_frame(
     hmac_key: bytes,
     cipher_key: bytes,
     initialisation_vector: bytes,
+    header_version: int | None = None,
 ) -> BackupFrame:
     """Decrypt the next frame in the backup file."""
-    length = struct.unpack(">I", backup_file.read(4))[0]
-    assert length >= 10
-    ciphertext = backup_file.read(length - 10)
-    their_mac = backup_file.read(10)
-
     hmac = HMAC(hmac_key, SHA256(), backend=DefaultBackend)
-    hmac.update(ciphertext)
-    our_mac = hmac.finalize()
-    if their_mac != our_mac[: len(their_mac)]:
-        raise MACMismatchError()
-
     cipher = Cipher(
         algorithm=AES(cipher_key),
         mode=CTR(initialisation_vector),
         backend=DefaultBackend,
     )
     decryptor = cipher.decryptor()
+ 
+    if header_version is None:
+        length = struct.unpack(">I", backup_file.read(4))[0]
+    else:
+        # tested for header_version == 1
+        encrypted_length = backup_file.read(4)
+        hmac.update(encrypted_length)
+        decrypted_length = decryptor.update(encrypted_length)
+        length = struct.unpack(">I", decrypted_length)[0]
+
+    assert length >= 10
+    ciphertext = backup_file.read(length - 10)
+    their_mac = backup_file.read(10)
+
+    hmac.update(ciphertext)
+    our_mac = hmac.finalize()
+    if their_mac != our_mac[: len(their_mac)]:
+        raise MACMismatchError()
+
     frame_bytes = decryptor.update(ciphertext) + decryptor.finalize()
 
     return BackupFrame.FromString(frame_bytes)
@@ -240,13 +256,13 @@ def decrypt_backup(
     key_values: Dict[str, Dict[str, Any]] = {}
 
     # Work out basic cryptographic parameters
-    initialisation_vector, salt = read_backup_header(backup_file)
+    initialisation_vector, salt, header_version = read_backup_header(backup_file)
     cipher_key, hmac_key = derive_keys(passphrase, salt)
 
     # Begin decryption, one frame at a time
     while True:
         backup_frame = decrypt_frame(
-            backup_file, hmac_key, cipher_key, initialisation_vector
+            backup_file, hmac_key, cipher_key, initialisation_vector, header_version
         )
         initialisation_vector = increment_initialisation_vector(initialisation_vector)
 
