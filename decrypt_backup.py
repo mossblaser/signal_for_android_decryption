@@ -101,10 +101,14 @@ def increment_initialisation_vector(initialisation_vector: bytes) -> bytes:
     return struct.pack(">I", counter) + initialisation_vector[4:]
 
 
+class UnsupportedVersionError(ValueError):
+    """Thrown if an unrecognised header version number is encountered."""
+
+
 class MACMismatchError(Exception):
     def __init__(self) -> None:
         super().__init__(
-            "Bad MAC found. Passphrase may be incorrect or file corrupted."
+            "Bad MAC found. Passphrase may be incorrect or file corrupted or incompatible."
         )
 
 
@@ -126,12 +130,13 @@ def decrypt_frame(
  
     if header_version is None:
         length = struct.unpack(">I", backup_file.read(4))[0]
-    else:
-        # tested for header_version == 1
+    elif header_version == 1:
         encrypted_length = backup_file.read(4)
         hmac.update(encrypted_length)
         decrypted_length = decryptor.update(encrypted_length)
         length = struct.unpack(">I", decrypted_length)[0]
+    else:
+        raise UnsupportedVersionError(header_version)
 
     assert length >= 10
     ciphertext = backup_file.read(length - 10)
