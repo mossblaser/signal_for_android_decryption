@@ -76,3 +76,12 @@ files are organised as follows:
 A final obvious warning: all decrypted files are...unencrypted(!). You should
 make sure to only perform decryption on a trusted device backed by sufficiently
 secure storage for your needs.
+
+
+Contributors
+============
+
+The code in this repository was originally written by @mossblaser but has also
+greatfully received contributions from:
+
+* @lapseofreason
