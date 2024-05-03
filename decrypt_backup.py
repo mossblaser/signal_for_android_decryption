@@ -319,7 +319,7 @@ def decrypt_backup(
             if backup_frame.HasField("attachment"):
                 filename = (
                     attachments_directory
-                    / f"{backup_frame.attachment.attachmentId}.bin"
+                    / f"{backup_frame.attachment.rowId}.bin"
                 )
                 length = backup_frame.attachment.length
             elif backup_frame.HasField("sticker"):
