@@ -144,7 +144,7 @@ def decrypt_frame(
 
     hmac.update(ciphertext)
     our_mac = hmac.finalize()
-    if their_mac != our_mac[: len(their_mac)]:
+    if their_mac != our_mac[:10]:
         raise MACMismatchError()
 
     frame_bytes = decryptor.update(ciphertext) + decryptor.finalize()
@@ -185,7 +185,7 @@ def decrypt_frame_payload(
     # Verify MAC
     their_mac = backup_file.read(10)
     our_mac = hmac.finalize()
-    if their_mac != our_mac[: len(their_mac)]:
+    if their_mac != our_mac[:10]:
         raise MACMismatchError()
 
     # Output final decrypted data
